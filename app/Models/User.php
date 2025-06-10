@@ -6,6 +6,8 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use App\Models\Conversation;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class User extends Authenticatable
 {
@@ -22,6 +24,13 @@ class User extends Authenticatable
         'email',
         'password',
     ];
+
+
+    // Define the relationship with conversations
+    public function conversations()
+    {
+        return $this->hasMany(Conversation::class);
+    }
 
     /**
      * The attributes that should be hidden for serialization.

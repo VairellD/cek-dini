@@ -43,5 +43,13 @@
                 {{ __('Log in') }}
             </x-primary-button>
         </div>
+        <div class="flex w-full flex-row gap-4 items-center justify-center mt-2 text-white">
+            Or Login with
+        </div>
+        <div class="flex w-full flex-row gap-2 items-center justify-center mt-2">
+            <a href="{{ route('auth.google') }}" class="text-black rounded-sm w-32 block text-center py-1 text-sm">
+                {{ svg('fab-google', 'w-6 h-6 inline text-white') }}
+            </a>
+        </div>
     </form>
 </x-guest-layout>
