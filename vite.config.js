@@ -8,4 +8,16 @@ export default defineConfig({
             refresh: true,
         }),
     ],
+    build: {
+        rollupOptions: {
+            output: {
+                assetFileNames: (assetInfo) => {
+                    if (assetInfo.name.endsWith('.woff') || assetInfo.name.endsWith('.woff2')) {
+                        return 'webfonts/[name][extname]';
+                    }
+                    return 'assets/[name][extname]';
+                },
+            },
+        },
+    },
 });

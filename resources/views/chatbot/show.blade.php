@@ -6,34 +6,42 @@
     </x-slot>
 
     @section('content')
-    <div class="container">
+    <div class="container text-white w-full m-10 bg-gray-800 p-4 mb-4">
         <div class="row justify-content-center">
+            <div class="card-header">
+                <a href="{{ route('chatbot.index') }}" class="btn btn-sm btn-outline-secondary me-2">← Back</a>
+                <span>{{ $conversation->title }}</span>
+            </div>
             <div class="col-md-8">
-                <div class="card">
-                    <div class="card-header">
-                        <a href="{{ route('chatbot.index') }}" class="btn btn-sm btn-outline-secondary me-2">← Back</a>
-                        <span>{{ $conversation->title }}</span>
-                    </div>
 
+                <div class="card">
                     {{-- The Chat Window --}}
                     <div class="card-body" id="chat-box" style="height: 400px; overflow-y: scroll;">
                         @foreach($messages as $message)
                             <div
-                                class="message mb-3 p-2 rounded {{ $message->sender === 'user' ? 'bg-light' : 'bg-primary-subtle' }}">
-                                {!! nl2br(e($message->content)) !!}
+                                class="d-flex mb-3  w-full {{ $message->sender === 'user' ? 'justify-content-end' : 'justify-content-start' }}">
+                                <div class="message p-2 rounded {{ $message->sender === 'user' ? 'bg-light' : 'bg-primary-subtle' }}"
+                                    style="max-width: 70%;">
+                                    {!! nl2br(e($message->content)) !!}
+                                </div>
                             </div>
                         @endforeach
                     </div>
 
                     {{-- The Input Form --}}
-                    <div class="card-footer">
+                    <div class="card-footer ">
                         <form id="chat-form" action="{{ route('chatbot.ask', $conversation) }}" method="POST"
                             autocomplete="off">
                             @csrf
-                            <div class="input-group">
-                                <input type="text" id="user-input" class="form-control"
+                            <div class="input-group rounded-md text-black flex flex-row gap-3">
+                                {{-- The CSRF token is already included in the form --}}
+                                {{-- The input field for user messages --}}
+                                <input type="text" id="user-input" class="form-control w-full rounded-md"
                                     placeholder="Type your message here..." required>
-                                <button class="btn btn-primary" type="submit" id="send-button">Send</button>
+                                <button class="btn btn-primary text-white" type="submit"
+                                    id="send-button">@svg('bx-send')
+                                    Send
+                                </button>
                             </div>
                             <div id="input-hint" class="form-text text-muted mt-1" style="height: 1rem;"></div>
                         </form>
@@ -44,7 +52,7 @@
     </div>
 
     <script>
-        // The Javascript can be simplified. 
+        // The Javascript can be simplified.
         // It no longer needs to ask the first question, as the controller handles that.
         // Its only job is to take user input, send it via fetch, and display the response.
         // The fetch URL should be `chatForm.action`.
@@ -83,7 +91,7 @@
                 // --- PART 1: SENDING ---
                 addMessage(message, 'user'); // Visually add the user's message immediately
                 userInput.value = ''; // Clear the input field
-                inputHint.textContent = 'Aura is thinking...'; // Show a thinking indicator
+                inputHint.textContent = 'Dini is thinking...'; // Show a thinking indicator
                 sendButton.disabled = true; // Disable the button to prevent double-sending
 
                 try {

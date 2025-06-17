@@ -8,8 +8,6 @@
 
     <div class="card mt-8 text-white bg-gray-800 p-4 mb-4">
 
-
-
         <div class="row justify-content-center">
             <div class="col-md-8">
                 <div class="card">

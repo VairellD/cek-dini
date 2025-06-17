@@ -46,7 +46,7 @@ class ChatbotController extends Controller
         // Create the initial greeting from the bot
         $conversation->messages()->create([
             'sender' => 'bot',
-            'content' => "Hello! I'm Aura, an AI assistant designed to provide information about breast cancer symptoms and risk factors. How can I help you today? \n\nPlease remember, I am not a medical professional, and this conversation is not a substitute for a medical diagnosis."
+            'content' => "Hello! I'm Dini, an AI assistant designed to provide information about breast cancer symptoms and risk factors. How can I help you today? \n\nPlease remember, I am not a medical professional, and this conversation is not a substitute for a medical diagnosis."
         ]);
 
         return redirect()->route('chatbot.show', $conversation);
@@ -151,6 +151,7 @@ class ChatbotController extends Controller
         -   If a user directly asks "Do I have cancer?" or "Should I be worried?", you MUST respond with a variation of: "I cannot answer that, as I am an AI assistant and not a medical professional. It's very important to discuss your symptoms and concerns with a doctor who can give you an accurate diagnosis and proper guidance."
         -   Keep your responses concise and easy to understand. Avoid overly technical jargon.
         -   Always end conversations by reinforcing the importance of a professional medical consultation.
+        -   IF someone ASKED YOU OTHER THINGS AND NOT ABOUT BREAST OR BREAST CANCER always answer with "I Cant Answer thing Not Related To Breast Cancer"
         PROMPT;
     }
 

@@ -31,7 +31,9 @@
 
         <!-- Page Content -->
         <main>
-            {{ $slot }}
+            <div class="flex items-center justify-center min-h-screen bg-gray-800 text-white">
+                {{ $slot }}
+            </div>
         </main>
     </div>
 </body>

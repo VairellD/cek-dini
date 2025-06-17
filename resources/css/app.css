@@ -1,3 +1,24 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* resources/css/app.css */
+@import "~@fortawesome/fontawesome-free/css/fontawesome.css";
+@import "~@fortawesome/fontawesome-free/css/solid.css"; /* For solid icons */
+@import "~@fortawesome/fontawesome-free/css/regular.css"; /* For regular icons */
+@import "~@fortawesome/fontawesome-free/css/brands.css"; /* For brand icons */
+
+#chat-box .message {
+    max-width: 70%;
+    margin-bottom: 1rem;
+}
+
+#chat-box .bg-light { /* User message background */
+    text-align: right;
+    margin-left: auto; /* Align to right */
+}
+
+#chat-box .bg-primary-subtle {/* Bot message background */
+    text-align: left;
+    margin-right: auto; /* Align to left */
+}
