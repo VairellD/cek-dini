@@ -19,10 +19,18 @@
                     <div class="card-body" id="chat-box" style="height: 400px; overflow-y: scroll;">
                         @foreach($messages as $message)
                             <div
-                                class="d-flex mb-3  w-full {{ $message->sender === 'user' ? 'justify-content-end' : 'justify-content-start' }}">
-                                <div class="message p-2 rounded {{ $message->sender === 'user' ? 'bg-light' : 'bg-primary-subtle' }}"
+                                class="d-flex mb-3 w-full {{ $message->sender === 'user' ? 'justify-content-end' : 'justify-content-start' }}">
+                                <div class="message p-2 rounded {{ $message->sender === 'user' ? 'bg-light text-black' : 'bg-primary-subtle' }}"
                                     style="max-width: 70%;">
-                                    {!! nl2br(e($message->content)) !!}
+
+                                    {{-- Check if the message content is an image URL --}}
+                                    @if(Illuminate\Support\Str::startsWith($message->content, 'image::'))
+                                        @php $url = Illuminate\Support\Str::after($message->content, 'image::'); @endphp
+                                        <img src="{{ $url }}" alt="Generated Chart" class="img-fluid rounded">
+                                    @else
+                                        {!! nl2br(e($message->content)) !!}
+                                    @endif
+
                                 </div>
                             </div>
                         @endforeach
@@ -70,57 +78,68 @@
             // Automatically scroll to the bottom of the chat box
             chatBox.scrollTop = chatBox.scrollHeight;
 
-            // Function to add a new message to the chat display
-            function addMessage(message, sender) {
+            function addMessage(content, sender, isHtml = false) {
+                const messageWrapper = document.createElement('div');
+                messageWrapper.className = `d-flex mb-3 w-full ${sender === 'user' ? 'justify-content-end' : 'justify-content-start'}`;
+
                 const messageDiv = document.createElement('div');
-                messageDiv.className = `message mb-3 p-2 rounded ${sender === 'user' ? 'bg-light' : 'bg-primary-subtle'}`;
-                // Use innerText to prevent HTML injection from bot response
-                messageDiv.innerText = message;
-                chatBox.appendChild(messageDiv);
-                chatBox.scrollTop = chatBox.scrollHeight; // Auto-scroll
+                messageDiv.className = `message p-2 rounded ${sender === 'user' ? 'bg-light text-black' : 'bg-primary-subtle'}`;
+                messageDiv.style.maxWidth = '70%';
+
+                if (isHtml) {
+                    messageDiv.innerHTML = content; // Use innerHTML for images
+                } else {
+                    messageDiv.innerText = content; // Use innerText for security on text content
+                }
+
+                messageWrapper.appendChild(messageDiv);
+                chatBox.appendChild(messageWrapper);
+                chatBox.scrollTop = chatBox.scrollHeight;
             }
 
-            // =======================================================
-            // THIS IS THE CORE SEND/RECEIVE LOGIC
-            // =======================================================
+
+            // ** UPDATED submit event listener **
             chatForm.addEventListener('submit', async function (e) {
-                e.preventDefault(); // Prevent the form from doing a full page reload
+                e.preventDefault();
                 const message = userInput.value.trim();
                 if (!message) return;
 
-                // --- PART 1: SENDING ---
-                addMessage(message, 'user'); // Visually add the user's message immediately
-                userInput.value = ''; // Clear the input field
-                inputHint.textContent = 'Dini is thinking...'; // Show a thinking indicator
-                sendButton.disabled = true; // Disable the button to prevent double-sending
+                // We now use the more flexible addMessage function
+                addMessage(message, 'user');
+                userInput.value = '';
+                inputHint.textContent = 'Dini is thinking...';
+                sendButton.disabled = true;
 
                 try {
-                    // This is the actual network request that SENDS the message to Laravel
                     const response = await fetch(chatForm.action, {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
                             'X-CSRF-TOKEN': document.querySelector('input[name="_token"]').value
                         },
-                        body: JSON.stringify({ message: message }) // The data being sent
+                        body: JSON.stringify({ message: message })
                     });
 
-                    // --- PART 2: RECEIVING ---
-                    // We wait for the server to process and respond
                     const data = await response.json();
 
-                    // When the response is RECEIVED, display the bot's message
+                    // ** NEW LOGIC TO HANDLE COMPLEX RESPONSES **
                     if (data.message) {
+                        // It's a simple text-only response
                         addMessage(data.message, 'bot');
+                    } else if (data.text && data.imageUrl) {
+                        // It's a mixed response with text and an image
+                        addMessage(data.text, 'bot'); // Add the text part
+                        // Add the image part
+                        const imageHtml = `<img src="${data.imageUrl}" alt="Generated Chart" class="img-fluid rounded">`;
+                        addMessage(imageHtml, 'bot', true); // `true` indicates this is HTML
                     } else {
                         addMessage('Sorry, there was an error processing your request.', 'bot');
                     }
-                } catch (error) {
-                    console.log('Error:', error);
 
+                } catch (error) {
+                    console.error('Error:', error); // Use console.error for better visibility
                     addMessage('Could not connect to the server. Please check your connection.', 'bot');
                 } finally {
-                    // Re-enable the form regardless of success or failure
                     inputHint.textContent = '';
                     sendButton.disabled = false;
                     userInput.focus();

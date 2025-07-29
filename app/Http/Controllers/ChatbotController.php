@@ -11,6 +11,8 @@ use Gemini\Data\Content;
 use Gemini\Enums\Role;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Support\Facades\Log;
+use Symfony\Component\Process\Exception\ProcessFailedException;
+use Symfony\Component\Process\Process;
 
 class ChatbotController extends Controller
 {
@@ -36,17 +38,19 @@ class ChatbotController extends Controller
     }
 
     // Starts a new conversation
+    // In app/Http/Controllers/ChatbotController.php
+
     public function startNewConversation()
     {
         $conversation = Conversation::create([
             'user_id' => Auth::id(),
-            'title' => 'Conversation on ' . now()->format('F j, Y, g:i a')
+            'title' => 'Analisis Data Pasien - ' . now()->format('F j, Y, g:i a') // Updated title
         ]);
 
-        // Create the initial greeting from the bot
+        // **UPDATED** Create a greeting that matches the System Prompt's purpose
         $conversation->messages()->create([
             'sender' => 'bot',
-            'content' => "Hello! I'm Dini, an AI assistant designed to provide information about breast cancer symptoms and risk factors. How can I help you today? \n\nPlease remember, I am not a medical professional, and this conversation is not a substitute for a medical diagnosis."
+            'content' => "Halo! Saya Dini, asisten AI yang dapat menganalisis dan membuat grafik dari data pasien di Indonesia. \n\nAnda bisa meminta saya untuk:\n- Menampilkan tren data untuk provinsi tertentu (contoh: 'tren untuk Jawa Barat').\n- Membandingkan data antar provinsi untuk tahun tertentu (contoh: 'grafik tahun 2024').\n\nBagaimana saya bisa membantu Anda?"
         ]);
 
         return redirect()->route('chatbot.show', $conversation);
@@ -57,77 +61,111 @@ class ChatbotController extends Controller
      */
 
     // In app/Http/Controllers/ChatbotController.php
+    // In app/Http/Controllers/ChatbotController.php
+
     public function ask(Request $request, Conversation $conversation)
     {
         $this->authorize('update', $conversation);
-
         $userInput = $request->input('message');
 
-        // 1. Save the user's new message to the database
-        $conversation->messages()->create([
-            'sender' => 'user',
-            'content' => $userInput
-        ]);
+        // 1. Save user message
+        $conversation->messages()->create(['sender' => 'user', 'content' => $userInput]);
 
-        // 2. Prepare the conversation history, excluding the latest user input to avoid duplication
+        // 2. Prepare FULL history
         $history = $conversation->messages()
-            ->where('id', '!=', $conversation->messages()->latest()->first()->id) // Exclude the latest message
-            ->latest()
-            ->take(14) // Take 14 to leave room for the latest user input
-            ->get()
-            ->reverse()
-            ->map(function ($msg) {
-                Log::debug('Content Parse Input', [
-                    'part' => $msg->content,
-                    'part_type' => gettype($msg->content),
-                    'role' => $msg->sender === 'user' ? Role::USER : Role::MODEL,
-                    'role_type' => gettype($msg->sender === 'user' ? Role::USER : Role::MODEL)
-                ]);
-                return Content::parse(
-                    part: is_string($msg->content) ? $msg->content : (string)$msg->content,
-                    role: $msg->sender === 'user' ? Role::USER : Role::MODEL
-                );
-            })->values()->toArray();
+            ->latest()->take(15)->get()->reverse()
+            ->map(fn($msg) => Content::parse(
+                part: $msg->content,
+                role: $msg->sender === 'user' ? Role::USER : Role::MODEL
+            ))->values()->toArray();
 
-        // Add the latest user input explicitly
-        $history[] = Content::parse(
-            part: $userInput,
-            role: Role::USER
-        );
+        // **NEW & IMPROVED PROMPTING STRATEGY**
+        // We will inject the system prompt directly into the history for maximum effect.
+        // The system prompt now acts as a "meta-instruction" right before the user's latest query.
+        $apiHistory = $history; // Copy history to a new variable
+        $systemPrompt = $this->getSystemPrompt();
 
-        // 3. Call the Gemini API with our carefully crafted instructions and history
-        try {
-            Log::debug('Gemini API Request', [
-                'model' => 'gemini-2.0-flash',
-                'system_prompt' => $this->getSystemPrompt(),
-                'history' => $history,
-                'user_input' => $userInput
-            ]);
-            $response = Gemini::generativeModel(model: 'gemini-2.0-flash')
-                ->generateContent($this->getSystemPrompt(), ...$history);
-            $botReply = $response->text() ?? "No response generated from the API.";
-            Log::debug('Gemini API Response', ['response' => $botReply]);
-        } catch (\Exception $e) {
-            Log::error("Gemini API Error: " . $e->getMessage(), [
-                'conversation_id' => $conversation->id,
-                'user_input' => $userInput,
-                'exception' => $e->getTraceAsString(),
-                'api_key' => config('gemini.api_key'),
-                'model' => 'gemini-2.0-flash'
-            ]);
-            $botReply = "I apologize, I'm encountering a technical issue at the moment. Please try again in a few moments.";
+        // Inject the system prompt just before the last user message
+        // This is a powerful way to ensure the model follows instructions for the latest query.
+        $lastUserMessageIndex = count($apiHistory) - 1;
+        if ($lastUserMessageIndex >= 0) {
+            $lastUserMessage = $apiHistory[$lastUserMessageIndex];
+            $apiHistory[$lastUserMessageIndex] = Content::parse(
+                part: $systemPrompt . "\n\nUSER QUESTION: " . $lastUserMessage->parts[0]->text,
+                role: Role::USER
+            );
         }
 
-        // 4. Save the bot's response to the database
-        $conversation->messages()->create([
-            'sender' => 'bot',
-            'content' => $botReply
-        ]);
+        // 3. Call Gemini API with the reinforced history
+        try {
+            // We no longer need withSystemInstruction() as it's now part of the history
+            $response = Gemini::generativeModel(model: 'gemini-1.5-flash-latest')
+                ->generateContent(...$apiHistory);
 
-        // 5. Return the bot's response to the frontend
-        return response()->json([
-            'message' => $botReply
-        ]);
+            $botReply = $response->text();
+        } catch (\Exception $e) {
+            Log::error("Gemini API Error: " . $e->getMessage(), ['trace' => $e->getTraceAsString()]);
+            $botReply = "I apologize, I'm encountering a technical issue.";
+        }
+
+        // Sanitize the response to remove any potential leftover instructions
+        $botReply = trim(str_replace($this->getSystemPrompt(), '', $botReply));
+
+
+        // 4. CHECK if Gemini requested a chart (Your existing logic from here is fine)
+        if (str_starts_with($botReply, '[chart:')) {
+            preg_match('/\[chart:type=(.*),column=(.*)\]/', $botReply, $matches);
+
+            if (count($matches) === 3) {
+                $chartType = $matches[1];
+                $column = $matches[2];
+
+                $dataFile = storage_path('app/data/data_cancer.xls');
+                $imageName = 'chart_' . $conversation->id . '_' . time() . '.png';
+                $publicPath = 'charts/' . $imageName;
+                $outputPath = public_path($publicPath);
+
+                if (!file_exists(public_path('charts'))) {
+                    mkdir(public_path('charts'), 0775, true);
+                }
+
+                $process = new Process([
+                    'python',
+                    storage_path('app/python/generate_chart.py'),
+                    '--file',
+                    $dataFile,
+                    '--output',
+                    $outputPath,
+                    '--type',
+                    $chartType,
+                    '--column',
+                    $column,
+                ]);
+
+                try {
+                    $process->mustRun();
+                    $imageUrl = asset($publicPath);
+                    $botTextMessage = "Tentu, ini adalah grafik {$chartType} untuk '{$column}'.";
+
+                    $conversation->messages()->create(['sender' => 'bot', 'content' => $botTextMessage]);
+                    $conversation->messages()->create(['sender' => 'bot', 'content' => "image::" . $imageUrl]);
+
+                    return response()->json([
+                        'text' => $botTextMessage,
+                        'imageUrl' => $imageUrl
+                    ]);
+                } catch (ProcessFailedException $exception) {
+                    Log::error('Python script failed: ' . $exception->getMessage());
+                    $errorReply = "Maaf, saya tidak dapat membuat grafik saat ini. Pastikan data dan nama kolom sudah benar.";
+                    $conversation->messages()->create(['sender' => 'bot', 'content' => $errorReply]);
+                    return response()->json(['message' => $errorReply]);
+                }
+            }
+        }
+
+        // 5. If it's a regular text response, save and return it
+        $conversation->messages()->create(['sender' => 'bot', 'content' => $botReply]);
+        return response()->json(['message' => $botReply]);
     }
 
 
@@ -135,26 +173,34 @@ class ChatbotController extends Controller
      * THE MOST IMPORTANT PART: The System Prompt
      * This "constitution" sets the rules, persona, and boundaries for our AI assistant.
      */
+
     private function getSystemPrompt(): string
     {
         return <<<PROMPT
-        You are "Dini", a specialized AI assistant. Your persona is empathetic, calm, clear, and safe. You are designed to be a Breast Cancer Information and Symptom Checker Assistant.
+    You are "Dini", an AI assistant that analyzes Indonesian patient data. Your persona is helpful and data-driven.
 
-        Your Core Directives:
-        1.  Your primary goal is to help users understand breast cancer symptoms and risk factors.
-        2.  Your ultimate objective is to STRONGLY and CONSISTENTLY encourage users to consult a real healthcare professional.
+    Your primary function is to generate charts from the provided data. You MUST follow these rules precisely to decide which chart to generate.
 
-        CRITICAL SAFETY RULES - YOU MUST OBEY THESE AT ALL TIMES:
-        -   DO NOT, under any circumstances, provide a diagnosis, a probability, a guess, or any form of medical opinion on whether the user has cancer.
-        -   DO NOT use conclusive or diagnostic-sounding language (e.g., "It sounds like you have...", "This is likely...", "You might have...").
-        -   Instead of diagnosing, explain what a symptom means in a general sense and state that it requires professional evaluation. For example, if a user describes a lump, say: "A new lump in the breast is a symptom that should always be evaluated by a doctor to determine its cause."
-        -   If a user directly asks "Do I have cancer?" or "Should I be worried?", you MUST respond with a variation of: "I cannot answer that, as I am an AI assistant and not a medical professional. It's very important to discuss your symptoms and concerns with a doctor who can give you an accurate diagnosis and proper guidance."
-        -   Keep your responses concise and easy to understand. Avoid overly technical jargon.
-        -   Always end conversations by reinforcing the importance of a professional medical consultation.
-        -   IF someone ASKED YOU OTHER THINGS AND NOT ABOUT BREAST OR BREAST CANCER always answer with "I Cant Answer thing Not Related To Breast Cancer"
-        PROMPT;
+    TOOL USAGE RULES - Check for a match in this specific order:
+
+    1.  **Line Chart Rule (Specific Province):** FIRST, check if the user mentions a specific province name and asks for its "trend", "history", or "riwayat". If so, you MUST respond with a line chart command for that province.
+        * Triggers: "tren untuk Jawa Barat", "riwayat jumlah pasien di Jawa Timur", "tampilkan data untuk Aceh dari tahun ke tahun"
+        * Format: [chart:type=line,column=Nama Provinsi]
+        * Example: [chart:type=line,column=Jawa Timur]
+
+    2.  **Bar Chart Rule (Specific Year):** SECOND, check if the user asks for data for a specific year. If so, you MUST respond with a bar chart command for that year.
+        * Triggers: "tampilkan data 2023", "bandingkan provinsi di tahun 2022", "grafik untuk 2024"
+        * Format: [chart:type=bar,column=YYYY]
+        * Example: [chart:type=bar,column=2024]
+
+    3.  **Default Chart Rule (General Request):** LASTLY, if and ONLY if the query does NOT match Rule #1 or Rule #2, and it's a general request for a chart (e.g., "berikan grafiknya", "total pasien di Indonesia"), you MUST respond with a bar chart command for the most recent year, 2024.
+        * Format: [chart:type=bar,column=2024]
+        * Example: [chart:type=bar,column=2024]
+
+    4.  Your ONLY response when using a tool should be the command itself. Do not add any other text or punctuation.
+    5.  For any other questions not related to charts, answer them normally.
+    PROMPT;
     }
-
     public function listModels()
     {
         try {
